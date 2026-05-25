@@ -67,6 +67,9 @@ internal static class Program
 
                 var method = mEl.GetString();
 
+                if (idObj is null && method is not null && method.StartsWith("notifications/", StringComparison.Ordinal))
+                    continue;
+
                 try
                 {
                     switch (method)
@@ -76,7 +79,7 @@ internal static class Program
                             {
                                 protocolVersion = "2024-11-05",
                                 serverInfo = new { name = "ResxMcp", version = "1.0.0" },
-                                capabilities = new { }   
+                                capabilities = new { tools = new { listChanged = false } }
                             });
                             break;
 
@@ -96,7 +99,7 @@ internal static class Program
                                         {
                                             var file = toolArgs.GetProperty("file").GetString()!;
                                             var text = await File.ReadAllTextAsync(file, new UTF8Encoding(false));
-                                            WriteResult(idObj, new { content = text });
+                                            WriteToolResult(idObj, text);
                                             break;
                                         }
                                     case "resx.write":
@@ -111,7 +114,7 @@ internal static class Program
                                             var tmp = file + ".mcp.tmp";
                                             await File.WriteAllTextAsync(tmp, NormalizeLF(content), new UTF8Encoding(false));
                                             File.Move(tmp, file, true);
-                                            WriteResult(idObj, new { ok = true, file });
+                                            WriteToolResult(idObj, $"Wrote UTF-8 text to {file}.");
                                             break;
                                         }
                                     case "resx.setEntry":
@@ -122,7 +125,7 @@ internal static class Program
                                             var cmt = toolArgs.TryGetProperty("comment", out var ce) ? ce.GetString() : null;
 
                                             SetResxEntry(file, key, val, cmt);
-                                            WriteResult(idObj, new { ok = true, file, name = key });
+                                            WriteToolResult(idObj, $"Updated key '{key}' in {file}.");
                                             break;
                                         }
                                     case "resx.removeEntry":
@@ -130,7 +133,7 @@ internal static class Program
                                             var file = toolArgs.GetProperty("file").GetString()!;
                                             var key = toolArgs.GetProperty("name").GetString()!;
                                             RemoveResxEntry(file, key);
-                                            WriteResult(idObj, new { ok = true, file, name = key });
+                                            WriteToolResult(idObj, $"Removed key '{key}' from {file}.");
                                             break;
                                         }
                                     default:
@@ -218,13 +221,58 @@ internal static class Program
         Console.WriteLine(JsonSerializer.Serialize(obj, JsonOpts));
     }
 
+    private static void WriteToolResult(object? id, string text)
+    {
+        var obj = new
+        {
+            jsonrpc = "2.0",
+            id,
+            result = new
+            {
+                content = new[]
+                {
+                    new
+                    {
+                        type = "text",
+                        text
+                    }
+                },
+                isError = false
+            }
+        };
+        Console.WriteLine(JsonSerializer.Serialize(obj, JsonOpts));
+    }
+
     private readonly record struct ToolDesc(string Name, string Description, object Schema)
     {
         public object ToListItem() => new
         {
             name = Name,
             description = Description,
-            inputSchema = new { type = "object", properties = Schema }
+            inputSchema = BuildInputSchema()
         };
+
+        private object BuildInputSchema()
+        {
+            var properties = new Dictionary<string, object>();
+            var required = new List<string>();
+
+            foreach (var property in Schema.GetType().GetProperties())
+            {
+                var value = property.GetValue(Schema)?.ToString();
+                var isRequired = value is not null && !value.EndsWith("?", StringComparison.Ordinal);
+                var type = value?.TrimEnd('?') switch
+                {
+                    "boolean" => "boolean",
+                    _ => "string"
+                };
+
+                properties[property.Name] = new { type };
+                if (isRequired)
+                    required.Add(property.Name);
+            }
+
+            return new { type = "object", properties, required, additionalProperties = false };
+        }
     }
 }
