@@ -58,10 +58,15 @@
 | `resx.read` | `.resx` 파일 내용 읽기 | `{ "file": "경로" }` |
 | `resx.write` | `.resx` 파일 쓰기(선택 백업) | `{ "file": "경로", "content": "<xml>", "backup": false }` |
 | `resx.setEntry` | 키 추가 또는 갱신 | `{ "file": "경로", "name": "Key", "value": "Value", "comment": "선택", "backup": false }` |
+| `resx.setEntries` | 여러 키 **일괄** 추가·갱신(읽기 1회 + 쓰기 1회) | `{ "file": "경로", "entries": [{ "name": "K1", "value": "V1", "comment": "선택" }, ...], "backup": false }` |
 | `resx.removeEntry` | 지정한 키 삭제 | `{ "file": "경로", "name": "Key", "backup": false }` |
+| `resx.removeEntries` | 여러 키 **일괄** 삭제(읽기 1회 + 쓰기 1회) | `{ "file": "경로", "names": ["K1", "K2"], "backup": false }` |
 
-> `backup` 매개변수는 `resx.write`, `resx.setEntry`, `resx.removeEntry` 모두에서 **선택**입니다.  
+> `backup` 매개변수는 `resx.write`, `resx.setEntry`, `resx.setEntries`, `resx.removeEntry`, `resx.removeEntries` 모두에서 **선택**입니다.  
 > 기본값은 `false`(백업 생성 안 함) 이며, `true` 로 설정하면 이전 파일의 `.bak` 사본을 남깁니다.
+
+> 💡 **성능 팁:** 여러 키를 한 번에 처리할 때는 `resx.setEntries` / `resx.removeEntries` 를 우선 사용하세요.  
+> 단일 키 도구는 호출할 때마다 파일 전체를 다시 쓰지만, 벌크 도구는 한 번만 읽고 한 번만 씁니다.
 
 ---
 

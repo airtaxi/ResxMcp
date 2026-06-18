@@ -22,10 +22,12 @@ internal static class Program
         Console.InputEncoding = new UTF8Encoding(false);
         var tools = new[]
         {
-            new ToolDesc("resx.read",        "Read .resx as UTF-8 text",                     new { file = "string" }),
-            new ToolDesc("resx.write",       "Write UTF-8 text to .resx (atomic replace)",   new { file = "string", content = "string", backup = "boolean?" }),
-            new ToolDesc("resx.setEntry",    "Set or add a key in .resx",                    new { file = "string", name = "string", value = "string", comment = "string?", backup = "boolean?" }),
-            new ToolDesc("resx.removeEntry", "Remove a key from .resx",                      new { file = "string", name = "string", backup = "boolean?" }),
+            new ToolDesc("resx.read",         "Read .resx as UTF-8 text",                     new { file = "string" }),
+            new ToolDesc("resx.write",        "Write UTF-8 text to .resx (atomic replace)",   new { file = "string", content = "string", backup = "boolean?" }),
+            new ToolDesc("resx.setEntry",     "Set or add a key in .resx",                    new { file = "string", name = "string", value = "string", comment = "string?", backup = "boolean?" }),
+            new ToolDesc("resx.setEntries",   "Set or add multiple keys in one pass",         new { file = "string", entries = "array", backup = "boolean?" }),
+            new ToolDesc("resx.removeEntry",  "Remove a key from .resx",                      new { file = "string", name = "string", backup = "boolean?" }),
+            new ToolDesc("resx.removeEntries","Remove multiple keys in one pass",             new { file = "string", names = "stringArray", backup = "boolean?" }),
         };
 
         bool first = true; // ★ 仅第一次剥 BOM
@@ -138,6 +140,41 @@ internal static class Program
                                             WriteToolResult(idObj, $"Removed key '{key}' from {file}.");
                                             break;
                                         }
+                                    case "resx.setEntries":
+                                        {
+                                            var file = toolArgs.GetProperty("file").GetString()!;
+                                            var entriesEl = toolArgs.GetProperty("entries");
+                                            var backup = toolArgs.TryGetProperty("backup", out var be) && be.GetBoolean();
+
+                                            var entries = new List<(string name, string val, string? cmt)>();
+                                            foreach (var item in entriesEl.EnumerateArray())
+                                            {
+                                                var n = item.GetProperty("name").GetString()!;
+                                                var v = item.GetProperty("value").GetString()!;
+                                                var c = item.TryGetProperty("comment", out var ce) ? ce.GetString() : null;
+                                                entries.Add((n, v, c));
+                                            }
+
+                                            SetResxEntries(file, entries, backup);
+                                            WriteToolResult(idObj, $"Updated {entries.Count} key(s) in {file}.");
+                                            break;
+                                        }
+                                    case "resx.removeEntries":
+                                        {
+                                            var file = toolArgs.GetProperty("file").GetString()!;
+                                            var namesEl = toolArgs.GetProperty("names");
+                                            var backup = toolArgs.TryGetProperty("backup", out var be) && be.GetBoolean();
+
+                                            var names = new List<string>();
+                                            foreach (var item in namesEl.EnumerateArray())
+                                            {
+                                                names.Add(item.GetString()!);
+                                            }
+
+                                            var (removed, missing) = RemoveResxEntries(file, names, backup);
+                                            WriteToolResult(idObj, $"Removed {removed} key(s) ({missing} not found) from {file}.");
+                                            break;
+                                        }
                                     default:
                                         WriteError(idObj, -32601, $"Unknown tool: {name}");
                                         break;
@@ -171,11 +208,35 @@ internal static class Program
         WriteDictToResx(path, dict, backup);
     }
 
+    private static void SetResxEntries(string path, IEnumerable<(string name, string val, string? cmt)> entries, bool backup)
+    {
+        var dict = ReadResxToDict(path);
+        foreach (var (name, val, cmt) in entries)
+        {
+            dict[name] = (val, cmt);
+        }
+        WriteDictToResx(path, dict, backup);
+    }
+
     private static void RemoveResxEntry(string path, string name, bool backup = false)
     {
         var dict = ReadResxToDict(path);
         if (dict.Remove(name))
             WriteDictToResx(path, dict, backup);
+    }
+
+    private static (int removed, int missing) RemoveResxEntries(string path, IEnumerable<string> names, bool backup)
+    {
+        var dict = ReadResxToDict(path);
+        var nameList = names.ToList();
+        var removed = 0;
+        foreach (var name in nameList)
+        {
+            if (dict.Remove(name)) removed++;
+        }
+
+        if (removed > 0) WriteDictToResx(path, dict, backup);
+        return (removed, nameList.Count - removed);
     }
 
     private static Dictionary<string, (string val, string? comment)> ReadResxToDict(string path)
@@ -264,13 +325,18 @@ internal static class Program
             {
                 var value = property.GetValue(Schema)?.ToString();
                 var isRequired = value is not null && !value.EndsWith("?", StringComparison.Ordinal);
-                var type = value?.TrimEnd('?') switch
+                var baseType = value?.TrimEnd('?');
+
+                // 支持基础类型与数组类型；数组根据 stringArray / array 区分元素形态
+                object propSchema = baseType switch
                 {
-                    "boolean" => "boolean",
-                    _ => "string"
+                    "boolean" => new { type = "boolean" },
+                    "stringArray" => new { type = "array", items = new { type = "string" } },
+                    "array" => new { type = "array", items = new { type = "object" } },
+                    _ => new { type = "string" }
                 };
 
-                properties[property.Name] = new { type };
+                properties[property.Name] = propSchema;
                 if (isRequired)
                     required.Add(property.Name);
             }

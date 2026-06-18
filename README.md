@@ -55,10 +55,15 @@ It works with **any MCP client** such as Gemini CLI, Claude Desktop, or Cursor I
 | `resx.read` | Read `.resx` as UTF-8 text | `{ "file": "path/to/file.resx" }` |
 | `resx.write` | Write UTF-8 text (atomic replace) | `{ "file": "path/to/file.resx", "content": "<xml>", "backup": false }` |
 | `resx.setEntry` | Add or update a key/value pair | `{ "file": "path/to/file.resx", "name": "Key", "value": "Value", "comment": "Optional", "backup": false }` |
+| `resx.setEntries` | Add or update **multiple** keys in one pass (1 read + 1 write) | `{ "file": "path/to/file.resx", "entries": [{ "name": "K1", "value": "V1", "comment": "Optional" }, ...], "backup": false }` |
 | `resx.removeEntry` | Remove a key from `.resx` | `{ "file": "path/to/file.resx", "name": "Key", "backup": false }` |
+| `resx.removeEntries` | Remove **multiple** keys in one pass (1 read + 1 write) | `{ "file": "path/to/file.resx", "names": ["K1", "K2"], "backup": false }` |
 
-> The `backup` parameter is **optional** on `resx.write`, `resx.setEntry`, and `resx.removeEntry`.  
+> The `backup` parameter is **optional** on `resx.write`, `resx.setEntry`, `resx.setEntries`, `resx.removeEntry`, and `resx.removeEntries`.  
 > It defaults to `false` (no `.bak` is created). Set it to `true` to keep a `.bak` copy of the previous file.
+
+> 💡 **Performance tip:** prefer `resx.setEntries` / `resx.removeEntries` when touching more than one key.  
+> Each single-key call rewrites the whole file, while the bulk variants read once and write once.
 
 ---
 
