@@ -24,8 +24,8 @@ internal static class Program
         {
             new ToolDesc("resx.read",        "Read .resx as UTF-8 text",                     new { file = "string" }),
             new ToolDesc("resx.write",       "Write UTF-8 text to .resx (atomic replace)",   new { file = "string", content = "string", backup = "boolean?" }),
-            new ToolDesc("resx.setEntry",    "Set or add a key in .resx",                    new { file = "string", name = "string", value = "string", comment = "string?" }),
-            new ToolDesc("resx.removeEntry", "Remove a key from .resx",                      new { file = "string", name = "string" }),
+            new ToolDesc("resx.setEntry",    "Set or add a key in .resx",                    new { file = "string", name = "string", value = "string", comment = "string?", backup = "boolean?" }),
+            new ToolDesc("resx.removeEntry", "Remove a key from .resx",                      new { file = "string", name = "string", backup = "boolean?" }),
         };
 
         bool first = true; // ★ 仅第一次剥 BOM
@@ -123,8 +123,9 @@ internal static class Program
                                             var key = toolArgs.GetProperty("name").GetString()!;
                                             var val = toolArgs.GetProperty("value").GetString()!;
                                             var cmt = toolArgs.TryGetProperty("comment", out var ce) ? ce.GetString() : null;
+                                            var backup = toolArgs.TryGetProperty("backup", out var be) && be.GetBoolean();
 
-                                            SetResxEntry(file, key, val, cmt);
+                                            SetResxEntry(file, key, val, cmt, backup);
                                             WriteToolResult(idObj, $"Updated key '{key}' in {file}.");
                                             break;
                                         }
@@ -132,7 +133,8 @@ internal static class Program
                                         {
                                             var file = toolArgs.GetProperty("file").GetString()!;
                                             var key = toolArgs.GetProperty("name").GetString()!;
-                                            RemoveResxEntry(file, key);
+                                            var backup = toolArgs.TryGetProperty("backup", out var be) && be.GetBoolean();
+                                            RemoveResxEntry(file, key, backup);
                                             WriteToolResult(idObj, $"Removed key '{key}' from {file}.");
                                             break;
                                         }
@@ -162,18 +164,18 @@ internal static class Program
     }
 
     // ---------- .resx 语义读写 ----------
-    private static void SetResxEntry(string path, string name, string value, string? comment)
+    private static void SetResxEntry(string path, string name, string value, string? comment, bool backup = false)
     {
         var dict = ReadResxToDict(path);
         dict[name] = (value, comment);
-        WriteDictToResx(path, dict);
+        WriteDictToResx(path, dict, backup);
     }
 
-    private static void RemoveResxEntry(string path, string name)
+    private static void RemoveResxEntry(string path, string name, bool backup = false)
     {
         var dict = ReadResxToDict(path);
         if (dict.Remove(name))
-            WriteDictToResx(path, dict);
+            WriteDictToResx(path, dict, backup);
     }
 
     private static Dictionary<string, (string val, string? comment)> ReadResxToDict(string path)
@@ -191,7 +193,7 @@ internal static class Program
         return result;
     }
 
-    private static void WriteDictToResx(string path, Dictionary<string, (string val, string? comment)> dict)
+    private static void WriteDictToResx(string path, Dictionary<string, (string val, string? comment)> dict, bool backup)
     {
         var tmp = path + ".mcp.tmp";
         using (var writer = new ResXResourceWriter(tmp))
@@ -202,7 +204,8 @@ internal static class Program
                 writer.AddResource(node);
             }
         }
-        if (File.Exists(path)) File.Copy(path, path + ".bak", true);
+        // 默认不生成 .bak，仅在 backup=true 时备份
+        if (backup && File.Exists(path)) File.Copy(path, path + ".bak", true);
         File.Move(tmp, path, true);
     }
 
